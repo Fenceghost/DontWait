@@ -1,0 +1,237 @@
+#Configure o ParticleMaterial:
+#Lifetime: 0.5 ~ 1.5s
+#Gravity: -20 ~ -30 (para subir)
+#Velocity: 5 ~ 15, com pequena variação lateral
+#Scale: 0.5 ~ 1.0, gradualmente diminuindo
+#Color: cinza, com alpha variando de 0.6 → 0
+
+extends Node2D
+
+# ============================================================
+# SIGNALS
+# ============================================================
+signal durability_changed(value: float)
+signal state_changed(state: int)
+signal lantern_extinguished
+signal threat_level_changed(level: float)
+signal chemical_spasm_triggered
+signal chemical_spasm_ended
+
+# ============================================================
+# ENUMS
+# ============================================================
+enum LanternState {
+    STRONG,
+    NORMAL,
+    WEAK,
+    RETREAT,
+    OFF
+}
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Durability")
+@export var max_durability: float = 100.0
+@export var drain_rate: float = 1.0
+
+@export_category("Light Energy")
+@export var strong_energy: float = 1.2
+@export var normal_energy: float = 1.0
+@export var weak_energy: float = 0.6
+
+@export_category("Light Radius")
+@export var base_radius: float = 96.0
+@export var humidity_radius_penalty: float = 0.4
+
+@export_category("Idle Flicker")
+@export var idle_flicker_speed: float = 1.0
+@export var idle_flicker_strength: float = 0.08
+@export var agitation_speed_multiplier: float = 4.0
+@export var agitation_strength_multiplier: float = 3.0
+
+@export_category("Chemical Interference")
+@export var spasm_chance: float = 0.25
+@export var spasm_duration: float = 0.25
+@export var spasm_energy_drop: float = 0.6
+
+@export_category("Audio")
+@export var calm_volume: float = -18.0
+@export var stress_volume: float = -12.0
+
+@export_category("Particles")
+@export var smoke_base_amount: int = 10
+@export var smoke_max_amount: int = 50
+
+# ============================================================
+# ESTADO
+# ============================================================
+var durability: float
+var state: LanternState = LanternState.NORMAL
+var time := 0.0
+var agitation := 0.0
+var humidity := 0.0
+var in_spasm := false
+var spasm_timer := 0.0
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var light: PointLight2D = $Light
+@onready var audio_idle: AudioStreamPlayer2D = $AudioIdle
+@onready var audio_stress: AudioStreamPlayer2D = $AudioStress
+@onready var audio_spasm: AudioStreamPlayer2D = $AudioSpasm
+@onready var smoke_particles: GPUParticles2D = $SmokeParticles
+
+# ============================================================
+# LIFECYCLE
+# ============================================================
+func _ready():
+    durability = max_durability
+    _update_light_radius()
+    _update_light_immediate()
+    audio_idle.play()
+    _update_particles()
+
+func _process(delta):
+    if state == LanternState.OFF:
+        _stop_all_audio()
+        smoke_particles.emitting = false
+        return
+
+    time += delta
+    _consume_durability(delta)
+    _update_state()
+    _process_chemical_interference(delta)
+    _apply_flicker()
+    _update_audio()
+    _update_particles()
+    _update_occluders()
+
+# ============================================================
+# DURABILITY & STATE
+# ============================================================
+func _consume_durability(delta):
+    durability = max(durability - drain_rate * delta, 0.0)
+    emit_signal("durability_changed", durability)
+
+func _update_state():
+    var percent = durability / max_durability
+    var new_state = state
+
+    if percent <= 0:
+        new_state = LanternState.OFF
+    elif percent < 0.2:
+        new_state = LanternState.WEAK
+    elif percent < 0.5:
+        new_state = LanternState.NORMAL
+    else:
+        new_state = LanternState.STRONG
+
+    if new_state != state:
+        state = new_state
+        emit_signal("state_changed", state)
+        _update_light_immediate()
+        if state == LanternState.OFF:
+            emit_signal("lantern_extinguished")
+
+# ============================================================
+# LIGHT
+# ============================================================
+func _update_light_immediate():
+    light.energy = _base_energy_for_state()
+
+func _base_energy_for_state() -> float:
+    match state:
+        LanternState.STRONG: return strong_energy
+        LanternState.NORMAL: return normal_energy
+        LanternState.WEAK: return weak_energy
+        _: return 0.0
+
+func _apply_flicker():
+    var speed = lerp(idle_flicker_speed, idle_flicker_speed * agitation_speed_multiplier, agitation)
+    var strength = lerp(idle_flicker_strength, idle_flicker_strength * agitation_strength_multiplier, agitation)
+    light.energy = _base_energy_for_state() + sin(time * speed) * strength
+
+# ============================================================
+# CHEMICAL INTERFERENCE
+# ============================================================
+func _process_chemical_interference(delta):
+    if agitation < 0.6:
+        return
+
+    if in_spasm:
+        spasm_timer -= delta
+        if spasm_timer <= 0:
+            in_spasm = false
+            emit_signal("chemical_spasm_ended")
+        return
+
+    if randf() < spasm_chance * agitation * delta:
+        in_spasm = true
+        spasm_timer = spasm_duration
+        light.energy *= spasm_energy_drop
+        audio_spasm.play()
+        emit_signal("chemical_spasm_triggered")
+
+# ============================================================
+# AUDIO REATIVO
+# ============================================================
+func _update_audio():
+    audio_idle.volume_db = lerp(calm_volume, stress_volume, agitation)
+    audio_idle.pitch_scale = lerp(1.0, 1.15, agitation)
+
+    if agitation > 0.4:
+        if not audio_stress.playing:
+            audio_stress.play()
+        audio_stress.volume_db = lerp(-24.0, -10.0, agitation)
+        audio_stress.pitch_scale = lerp(0.9, 1.2, agitation)
+    else:
+        audio_stress.stop()
+
+func _stop_all_audio():
+    audio_idle.stop()
+    audio_stress.stop()
+    audio_spasm.stop()
+
+# ============================================================
+# PARTICULAS DE FUMAÇA
+# ============================================================
+func _update_particles():
+    if not smoke_particles:
+        return
+
+    # Emite partículas apenas se a lanterna não está apagada
+    smoke_particles.emitting = state != LanternState.OFF
+
+    # Intensidade proporcional à fraca energia e agitação
+    var intensity = (1.0 - light.energy) + agitation
+    smoke_particles.amount = clamp(
+        int(smoke_base_amount + intensity * (smoke_max_amount - smoke_base_amount)),
+        smoke_base_amount,
+        smoke_max_amount
+    )
+
+# ============================================================
+# LIGHT OCCLUDERS (SOMBRAS)
+# ============================================================
+func _update_occluders():
+    # Todos os objetos com LightOccluder2D no grupo "lantern_occluders"
+    for occluder in get_tree().get_nodes_in_group("lantern_occluders"):
+        # Reduz visibilidade em energia fraca
+        occluder.light_mask = int(255 * light.energy)
+
+# ============================================================
+# INTERFACE EXTERNA
+# ============================================================
+func set_threat_level(value: float):
+    agitation = clamp(value, 0.0, 1.0)
+    emit_signal("threat_level_changed", agitation)
+
+func set_environment_humidity(value: float):
+    humidity = clamp(value, 0.0, 1.0)
+    _update_light_radius()
+
+func _update_light_radius():
+    var factor = 1.0 - humidity * humidity_radius_penalty
+    light.texture_scale = (base_radius * factor) / 100.0
