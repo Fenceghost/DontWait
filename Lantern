@@ -107,6 +107,11 @@ func _process(delta):
         smoke_particles.emitting = false
         return
 
+    if durability / max_durability < 0.2:
+        agitation = clamp(agitation + delta*0.5, 0, 1) # lampião "nervoso"
+        idle_flicker_speed = base_flicker_speed * 2.0
+        # aqui pode tocar um áudio de aviso
+
     time += delta
     _consume_durability(delta)
     _update_state()
