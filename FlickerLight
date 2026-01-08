@@ -1,0 +1,142 @@
+Light2D (Node2D ou Area2D)
+├─ Light2D
+├─ AudioStreamPlayer2D   (som do flicker)
+├─ Timer                 (controle do flicker)
+
+extends Node2D
+class_name FlickerLight
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Light Settings")
+@export var light: Light2D
+@export var flicker_min_energy: float = 0.2
+@export var flicker_max_energy: float = 1.2
+@export var normal_energy: float = 1.0
+
+@export_category("Flicker Behavior")
+@export var flicker_duration_min: float = 0.6
+@export var flicker_duration_max: float = 1.5
+@export var flicker_interval_min: float = 4.0
+@export var flicker_interval_max: float = 8.0
+
+@export_category("Audio")
+@export var flicker_sound: AudioStream
+@export var click_sound: AudioStream
+
+# ============================================================
+# ESTADO
+# ============================================================
+var is_on: bool = true
+var flickering: bool = false
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var audio: AudioStreamPlayer2D = $AudioStreamPlayer2D
+@onready var flicker_timer: Timer = $Timer
+
+# ============================================================
+# READY
+# ============================================================
+func _ready() -> void:
+	if light == null:
+		push_error("FlickerLight: Light2D não atribuída.")
+		return
+
+	light.energy = normal_energy
+	_schedule_next_flicker()
+
+# ============================================================
+# API PÚBLICA (CHAMADA PELO ClueItem)
+# ============================================================
+func toggle() -> void:
+	is_on = not is_on
+
+	if is_on:
+		_turn_on()
+	else:
+		_turn_off()
+
+func force_on() -> void:
+	is_on = true
+	_turn_on()
+
+func force_off() -> void:
+	is_on = false
+	_turn_off()
+
+# ============================================================
+# LIGA / DESLIGA
+# ============================================================
+func _turn_on() -> void:
+	light.enabled = true
+	light.energy = normal_energy
+	_play_click()
+	_schedule_next_flicker()
+
+func _turn_off() -> void:
+	flickering = false
+	light.enabled = false
+	_play_click()
+
+# ============================================================
+# FLICKER FALSO (ALARME PSICOLÓGICO)
+# ============================================================
+func _schedule_next_flicker() -> void:
+	if not is_on:
+		return
+
+	var wait_time := randf_range(
+		flicker_interval_min,
+		flicker_interval_max
+	)
+
+	flicker_timer.start(wait_time)
+
+func _on_Timer_timeout() -> void:
+	if not is_on:
+		return
+
+	_start_flicker()
+
+func _start_flicker() -> void:
+	if flickering:
+		return
+
+	flickering = true
+
+	var duration := randf_range(
+		flicker_duration_min,
+		flicker_duration_max
+	)
+
+	if flicker_sound:
+		audio.stream = flicker_sound
+		audio.play()
+
+	var t := 0.0
+	while t < duration:
+		t += get_process_delta_time()
+
+		light.energy = randf_range(
+			flicker_min_energy,
+			flicker_max_energy
+		)
+
+		await get_tree().process_frame
+
+	# volta ao normal (alarme falso)
+	light.energy = normal_energy
+	flickering = false
+
+	_schedule_next_flicker()
+
+# ============================================================
+# SOM
+# ============================================================
+func _play_click() -> void:
+	if click_sound:
+		audio.stream = click_sound
+		audio.play()
