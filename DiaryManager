@@ -1,0 +1,120 @@
+extends Node
+class_name DiaryManager
+
+# ============================================================
+# SIGNALS
+# ============================================================
+signal page_added(page_id: String)
+signal page_updated(page_id: String)
+signal diary_cleared
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Diary Settings")
+@export var allow_duplicate_pages := false
+
+# ============================================================
+# ESTADO INTERNO
+# ============================================================
+# pages[id] = DiaryPageData
+var pages: Dictionary = {}
+
+# Ordem de descoberta (importante para narrativa)
+var page_order: Array[String] = []
+
+# ============================================================
+# API PÚBLICA
+# ============================================================
+
+## Adiciona uma nova página ao diário
+func add_page(page: DiaryPageData) -> void:
+    if not page:
+        return
+
+    if pages.has(page.id) and not allow_duplicate_pages:
+        return
+
+    page.revealed = true
+    pages[page.id] = page
+
+    if not page_order.has(page.id):
+        page_order.append(page.id)
+
+    emit_signal("page_added", page.id)
+
+## Retorna todas as páginas (em ordem)
+func get_pages() -> Array:
+    var result: Array = []
+    for id in page_order:
+        if pages.has(id):
+            result.append(pages[id])
+    return result
+
+## Retorna uma página específica
+func get_page(page_id: String) -> DiaryPageData:
+    return pages.get(page_id)
+
+## Atualiza texto/emocional de uma página
+func update_page(page_id: String, new_text := "", new_emotion := "") -> void:
+    if not pages.has(page_id):
+        return
+
+    var page: DiaryPageData = pages[page_id]
+
+    if new_text != "":
+        page.text = new_text
+    if new_emotion != "":
+        page.emotion = new_emotion
+
+    emit_signal("page_updated", page_id)
+
+## Verifica se uma página já foi coletada
+func has_page(page_id: String) -> bool:
+    return pages.has(page_id)
+
+## Remove todas as páginas (ex: novo jogo)
+func clear_diary() -> void:
+    pages.clear()
+    page_order.clear()
+    emit_signal("diary_cleared")
+
+# ============================================================
+# SAVE / LOAD (BASE)
+# ============================================================
+
+## Retorna dados serializáveis
+func get_save_data() -> Dictionary:
+    var data := {}
+    data.pages = {}
+
+    for id in pages.keys():
+        var page: DiaryPageData = pages[id]
+        data.pages[id] = {
+            "title": page.title,
+            "text": page.text,
+            "emotion": page.emotion,
+            "revealed": page.revealed
+        }
+
+    data.order = page_order.duplicate()
+    return data
+
+## Restaura dados salvos
+func load_save_data(data: Dictionary) -> void:
+    clear_diary()
+
+    if not data.has("pages"):
+        return
+
+    for id in data.pages.keys():
+        var page_data := DiaryPageData.new()
+        page_data.id = id
+        page_data.title = data.pages[id].title
+        page_data.text = data.pages[id].text
+        page_data.emotion = data.pages[id].emotion
+        page_data.revealed = data.pages[id].revealed
+
+        pages[id] = page_data
+
+    page_order = data.order.duplicate()
