@@ -1,0 +1,170 @@
+Player (CharacterBody2D) [script: Player.gd]
+│
+├── Lantern (Node2D) [com Lantern.gd]
+├── Sprite2D
+└── AudioStep (AudioStreamPlayer2D)
+
+extends CharacterBody2D
+
+# ============================================================
+# EXPORTS - CONFIGURAÇÕES
+# ============================================================
+@export_category("Movement")
+@export var speed_walk := 90.0
+@export var speed_run := 150.0
+
+@export_category("Stamina")
+@export var max_stamina := 100.0
+@export var stamina_drain_rate := 20.0        # por segundo quando correndo
+@export var stamina_recover_rate := 15.0      # por segundo quando andando
+@export var stamina_min_run := 5.0            # mínimo para poder correr
+
+@export_category("Steps")
+@export var step_interval_walk := 0.45
+@export var step_interval_run := 0.25
+
+@export_category("TileMap")
+@export var ground_tilemap_path := NodePath("..") # Ajuste para o TileMap correto
+@export var step_sounds_wood: Array[AudioStream] = []
+@export var step_sounds_stone: Array[AudioStream] = []
+@export var step_sounds_mud: Array[AudioStream] = []
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var lantern := $Lantern
+@onready var audio_step := $AudioStep
+@onready var ground_tilemap := get_node_or_null(ground_tilemap_path) as TileMap
+@onready var sprite := $Sprite2D
+
+# ============================================================
+# ESTADO
+# ============================================================
+var velocity: Vector2 = Vector2.ZERO
+var is_running := false
+var stamina := max_stamina
+var step_timer := 0.0
+
+# ============================================================
+# PHYSICS PROCESS
+# ============================================================
+func _physics_process(delta):
+    _handle_input()
+    _move_player()
+    _process_steps(delta)
+    _update_stamina(delta)
+
+# ============================================================
+# INPUT E MOVIMENTO
+# ============================================================
+func _handle_input():
+    var input_vector = Vector2.ZERO
+    input_vector.x = Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left")
+    input_vector.y = Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up")
+    input_vector = input_vector.normalized()
+
+    # Determina se pode correr
+    is_running = Input.is_action_pressed("run") and stamina > stamina_min_run
+
+    # Ajusta velocidade
+    var current_speed = is_running ? speed_run : speed_walk
+    velocity = input_vector * current_speed
+
+func _move_player():
+    velocity = move_and_slide(velocity)
+
+# ============================================================
+# STAMINA
+# ============================================================
+func _update_stamina(delta):
+    if is_running and velocity.length() > 0:
+        stamina = max(stamina - stamina_drain_rate * delta, 0.0)
+        if stamina <= 0.0:
+            is_running = false
+    else:
+        stamina = min(stamina + stamina_recover_rate * delta, max_stamina)
+
+# ============================================================
+# PASSOS DINÂMICOS E ANIMAÇÃO
+# ============================================================
+func _process_steps(delta):
+    # Determina animação baseada em velocidade, stamina e agitação do lampião
+    if velocity.length() == 0:
+        sprite.animation = "idle_normal"
+        step_timer = 0.0
+    elif is_running:
+        sprite.animation = "run_normal"
+    else:
+        if stamina < max_stamina * 0.3:
+            sprite.animation = "walk_tired"
+        elif lantern.agitation > 0.5:
+            sprite.animation = "walk_nervous"
+        else:
+            sprite.animation = "walk_normal"
+
+    # Base interval para próximos passos
+    var interval = is_running ? step_interval_run : step_interval_walk
+
+    # Agitação do lampião aumenta irregularidade
+    if lantern.agitation > 0.0:
+        var agitation_factor = lantern.agitation
+        interval *= rand_range(1.0 - 0.15 * agitation_factor, 1.0 + 0.15 * agitation_factor)
+
+    step_timer -= delta
+    if step_timer <= 0.0 and velocity.length() > 0:
+        _play_step()
+        step_timer = interval
+
+func _play_step():
+    if not audio_step:
+        return
+
+    # Determina som por tipo de superfície
+    var step_stream = _get_step_sound_for_surface()
+    if step_stream:
+        audio_step.stream = step_stream
+
+    # Pitch base
+    var pitch = is_running ? rand_range(1.1, 1.2) : rand_range(0.95, 1.05)
+
+    # Ajuste por energia do lampião
+    pitch *= lerp(1.0, 0.85, 1.0 - lantern.light.energy)
+    # Ajuste por stamina
+    pitch *= lerp(1.0, 0.9, 1.0 - stamina/max_stamina)
+
+    # Tremor de passos se lampião está agitado
+    if lantern.agitation > 0.0:
+        pitch *= rand_range(1.0 - 0.05*lantern.agitation, 1.0 + 0.05*lantern.agitation)
+
+    audio_step.pitch_scale = pitch
+
+    # Volume ligeiramente afetado pela agitação do lampião
+    audio_step.volume_db = lerp(-3.0, 0.0, lantern.agitation)
+
+    audio_step.play()
+
+# ============================================================
+# DETECÇÃO DE SUPERFÍCIE
+# ============================================================
+func _get_step_sound_for_surface() -> AudioStream:
+    if not ground_tilemap:
+        return audio_step.stream  # fallback
+
+    var cell = ground_tilemap.world_to_map(global_position)
+    var tile_id = ground_tilemap.get_cellv(cell)
+    if tile_id == -1:
+        return audio_step.stream
+
+    var tile_data = ground_tilemap.tile_set.tile_get_user_data(tile_id)
+    if not tile_data or not tile_data.has("surface_type"):
+        return audio_step.stream
+
+    match tile_data["surface_type"]:
+        "wood":
+            return step_sounds_wood.size() > 0 ? step_sounds_wood[randi() % step_sounds_wood.size()] : audio_step.stream
+        "stone":
+            return step_sounds_stone.size() > 0 ? step_sounds_stone[randi() % step_sounds_stone.size()] : audio_step.stream
+        "mud":
+            return step_sounds_mud.size() > 0 ? step_sounds_mud[randi() % step_sounds_mud.size()] : audio_step.stream
+        _:
+            return audio_step.stream
