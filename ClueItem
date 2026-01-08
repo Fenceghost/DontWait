@@ -26,7 +26,9 @@ signal collected
 
 @export_category("Diary")
 @export var diary_page: DiaryPageData
-@export var diary_manager_path: NodePath
+
+@export_category("Dialogue")
+@export var dialogue_id: String = ""
 
 @export_category("References")
 @export var lantern_path: NodePath
@@ -73,21 +75,30 @@ func _on_lantern_light_updated(pos: Vector2, radius: float, energy: float):
     if light_reactive.is_illuminated and not was_revealed:
         was_revealed = true
         emit_signal("revealed")
+        _trigger_dialogue()
 
 # ============================================================
-# COLETA → DIÁRIO
+# COLETA → DIÁRIO E DIÁLOGO
 # ============================================================
 func _on_body_entered(body):
     if not body.is_in_group("player"):
         return
 
     emit_signal("collected")
+    _trigger_dialogue()
 
-    if diary_page and diary_manager_path != NodePath():
-        var diary = get_node_or_null(diary_manager_path)
-        if diary:
-            diary.add_page(diary_page)
+    # Envia página para DiaryManager global
+    if diary_page:
+        DiaryManager.add_page(diary_page)
 
     if destroy_on_collect:
         queue_free()
+
+# ============================================================
+# DIÁLOGO
+# ============================================================
+func _trigger_dialogue():
+    if dialogue_id != "":
+        DialogueManager.show_dialogue(dialogue_id)
+
 
