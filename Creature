@@ -1,0 +1,167 @@
+Creature (CharacterBody2D) [Creature.gd]
+│
+├── AnimatedSprite2D
+│   ├── idle
+│   ├── walk
+│   └── run
+│
+├── CollisionShape2D
+└── (opcional) AudioStreamPlayer2D
+
+extends CharacterBody2D
+
+# ============================================================
+# SIGNALS
+# ============================================================
+signal threat_level_changed(value: float)
+signal creature_state_changed(state: int)
+
+# ============================================================
+# ENUMS
+# ============================================================
+enum CreatureState {
+    IDLE,
+    STALKING,
+    HUNTING,
+    RETREAT
+}
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Detection")
+@export var detection_radius := 180.0
+@export var hunting_radius := 90.0
+
+@export_category("Movement")
+@export var speed_idle := 20.0
+@export var speed_stalking := 45.0
+@export var speed_hunting := 85.0
+
+# ============================================================
+# REFERÊNCIAS
+# ============================================================
+@export var player_path: NodePath
+@export var lantern_path: NodePath
+
+# ============================================================
+# ESTADO
+# ============================================================
+var state: CreatureState = CreatureState.IDLE
+var threat_level := 0.0
+
+var player: Node2D
+var lantern: Node2D
+
+var direction := Vector2.ZERO
+
+# Sistema compartilhado
+var light_reactive := LightReactive.new()
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
+
+# ============================================================
+# READY
+# ============================================================
+func _ready():
+    player = get_node_or_null(player_path)
+    lantern = get_node_or_null(lantern_path)
+
+    sprite.modulate.a = 0.0
+
+    if lantern:
+        lantern.light_updated.connect(_on_lantern_light_updated)
+
+# ============================================================
+# PHYSICS
+# ============================================================
+func _physics_process(delta):
+    if not player:
+        return
+
+    _update_state()
+    _update_movement()
+    _update_animation()
+    _update_threat(delta)
+
+# ============================================================
+# LANTERN CALLBACK
+# ============================================================
+func _on_lantern_light_updated(pos: Vector2, radius: float, energy: float):
+    light_reactive.process_light(
+        get_physics_process_delta_time(),
+        pos,
+        radius,
+        energy,
+        global_position,
+        sprite
+    )
+
+    # Luz forte força recuo
+    if light_reactive.is_illuminated and energy > 1.0:
+        state = CreatureState.RETREAT
+
+# ============================================================
+# STATE MACHINE
+# ============================================================
+func _update_state():
+    var distance = global_position.distance_to(player.global_position)
+
+    if light_reactive.is_illuminated:
+        if distance <= hunting_radius:
+            state = CreatureState.HUNTING
+        elif distance <= detection_radius:
+            state = CreatureState.STALKING
+        else:
+            state = CreatureState.IDLE
+    else:
+        # Fora da luz, caça agressiva
+        state = CreatureState.HUNTING
+
+# ============================================================
+# MOVEMENT
+# ============================================================
+func _update_movement():
+    direction = (player.global_position - global_position).normalized()
+
+    match state:
+        CreatureState.IDLE:
+            velocity = Vector2.ZERO
+        CreatureState.STALKING:
+            velocity = direction * speed_stalking
+        CreatureState.HUNTING:
+            velocity = direction * speed_hunting
+        CreatureState.RETREAT:
+            velocity = -direction * speed_idle
+
+    move_and_slide()
+
+# ============================================================
+# ANIMAÇÕES
+# ============================================================
+func _update_animation():
+    if velocity.length() == 0:
+        sprite.play("idle")
+    elif state == CreatureState.HUNTING:
+        sprite.play("run")
+    else:
+        sprite.play("walk")
+
+# ============================================================
+# THREAT LEVEL
+# ============================================================
+func _update_threat(delta):
+    var target := 0.0
+
+    match state:
+        CreatureState.IDLE: target = 0.1
+        CreatureState.STALKING: target = 0.6
+        CreatureState.HUNTING: target = 1.0
+        CreatureState.RETREAT: target = 0.2
+
+    threat_level = lerp(threat_level, target, delta * 2.0)
+    emit_signal("threat_level_changed", threat_level)
+
