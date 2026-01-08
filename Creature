@@ -121,6 +121,13 @@ func _update_state():
         # Fora da luz, caça agressiva
         state = CreatureState.HUNTING
 
+    if player_dist < danger_distance and is_illuminated:
+        # Lampião do player enfraquece
+        player.lantern.drain_energy(10 * delta)
+        state = CreatureState.HUNTING
+
+    if in_safe_zone():
+        state = CreatureState.RETREAT
 # ============================================================
 # MOVEMENT
 # ============================================================
@@ -163,5 +170,6 @@ func _update_threat(delta):
         CreatureState.RETREAT: target = 0.2
 
     threat_level = lerp(threat_level, target, delta * 2.0)
+    audio_footstep.volume_db = lerp(-15, 0, threat_level)
     emit_signal("threat_level_changed", threat_level)
 
