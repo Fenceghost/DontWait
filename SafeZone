@@ -1,0 +1,172 @@
+Campfire (Node2D)  <-- Script: Campfire.gd
+├── Light2D
+├── AudioStreamPlayer2D
+├── Particles2D
+├── SafeZone (Area2D)
+│   └── CollisionShape2D
+└── UI (CanvasLayer ou Control)
+    └── ProgressBar
+
+extends Node2D
+class_name Campfire
+
+# ============================================================
+# SIGNALS
+# ============================================================
+signal activated
+signal deactivated
+signal player_entered
+signal player_exited
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Gameplay")
+@export var duration := 60.0            # Duração da fogueira acesa
+@export var auto_extinguish := true
+
+@export_category("Light")
+@export var light_energy := 1.0
+@export var light_radius := 150.0       # Alcance máximo da luz
+@export var min_light_energy := 0.2    # Luz mínima quando a fogueira quase acabou
+
+@export_category("Audio/Particles")
+@export var fire_sound: AudioStream
+@export var particle_scene: PackedScene
+
+@export_category("Creature Interaction")
+@export var repel_creature := true
+@export var repel_radius := 180.0
+@export var repel_speed := 50.0
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var safe_zone: Area2D = $SafeZone
+@onready var collision_shape: CollisionShape2D = $SafeZone/CollisionShape2D
+@onready var light_2d: Light2D = $Light2D
+@onready var audio_player: AudioStreamPlayer2D = $AudioStreamPlayer2D
+@onready var particles: Particles2D = $Particles2D
+@onready var progress_bar: ProgressBar = $UI/ProgressBar  # barra de tempo da fogueira
+
+# ============================================================
+# ESTADO
+# ============================================================
+var active := false
+var timer := 0.0
+var player_inside := false
+
+# ============================================================
+# READY
+# ============================================================
+func _ready():
+    _deactivate_fire()
+    safe_zone.body_entered.connect(_on_body_entered)
+    safe_zone.body_exited.connect(_on_body_exited)
+    progress_bar.visible = false
+
+# ============================================================
+# PHYSICS PROCESS
+# ============================================================
+func _physics_process(delta):
+    if active and auto_extinguish:
+        timer -= delta
+        if timer <= 0.0:
+            _deactivate_fire()
+        _update_progress_and_light()
+
+    if active and repel_creature:
+        _repel_creatures(delta)
+
+# ============================================================
+# ATIVAR / DESATIVAR FOGUEIRA
+# ============================================================
+func activate():
+    active = true
+    timer = duration
+
+    light_2d.visible = true
+    light_2d.energy = light_energy
+    light_2d.texture_scale = light_radius / 100.0
+
+    if fire_sound:
+        audio_player.stream = fire_sound
+        audio_player.play()
+
+    if particles:
+        particles.emitting = true
+
+    progress_bar.visible = true
+    progress_bar.value = 100
+
+    if player_inside:
+        _set_player_safe(true)
+
+    emit_signal("activated")
+
+func _deactivate_fire():
+    active = false
+    light_2d.visible = false
+    audio_player.stop()
+    if particles:
+        particles.emitting = false
+
+    progress_bar.visible = false
+
+    if player_inside:
+        _set_player_safe(false)
+
+    emit_signal("deactivated")
+
+# ============================================================
+# ATUALIZA BAR E LUZ
+# ============================================================
+func _update_progress_and_light():
+    # Atualiza a barra de progresso
+    progress_bar.value = clamp((timer / duration) * 100, 0, 100)
+    # Diminue luz quando o tempo está baixo
+    light_2d.energy = lerp(min_light_energy, light_energy, timer / duration)
+
+# ============================================================
+# INTERAÇÃO COM O JOGADOR
+# ============================================================
+func interact():
+    if not active:
+        activate()
+
+# ============================================================
+# MONITORAMENTO DA SAFEZONE
+# ============================================================
+func _on_body_entered(body):
+    if body.is_in_group("player"):
+        player_inside = true
+        if active:
+            _set_player_safe(true)
+        emit_signal("player_entered")
+
+func _on_body_exited(body):
+    if body.is_in_group("player"):
+        player_inside = false
+        _set_player_safe(false)
+        emit_signal("player_exited")
+
+# ============================================================
+# FUNÇÃO AUXILIAR - SAFEZONE
+# ============================================================
+func _set_player_safe(state: bool):
+    if state:
+        print("Jogador protegido!")
+    else:
+        print("Jogador fora da safe zone!")
+
+# ============================================================
+# REPULSÃO DE CRIATURAS
+# ============================================================
+func _repel_creatures(delta):
+    for creature in get_tree().get_nodes_in_group("creatures"):
+        var dist = global_position.distance_to(creature.global_position)
+        if dist <= repel_radius:
+            var dir = (creature.global_position - global_position).normalized()
+            creature.global_position += dir * repel_speed * delta
+            if "state" in creature and creature.state != null:
+                creature.state = creature.CreatureState.RETREAT
