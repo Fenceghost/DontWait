@@ -4,29 +4,63 @@ ClueItem (Node2D)
 ├── AudioStreamPlayer2D
 └── (opcional) CollisionShape2D
 
-extends Node2D
+extends Area2D
+class_name ClueItem
 
-@export_category("Clue")
-@export var reveal_sound: AudioStream
-@export var reveal_delay := 0.2
+# ============================================================
+# SIGNALS
+# ============================================================
+signal revealed
+signal collected
 
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Clue Behavior")
+@export var collectible := true
+@export var destroy_on_collect := true
+
+@export_category("Light Reaction")
+@export var min_visible_energy := 0.4
+@export var fade_speed := 4.0
+
+@export_category("Diary")
+@export var diary_page: DiaryPageData
+@export var diary_manager_path: NodePath
+
+@export_category("References")
 @export var lantern_path: NodePath
 
+# ============================================================
+# ESTADO
+# ============================================================
+var lantern
+var was_revealed := false
+var light_reactive := LightReactive.new()
+
+# ============================================================
+# NODES
+# ============================================================
 @onready var sprite: Sprite2D = $Sprite2D
 @onready var audio: AudioStreamPlayer2D = $AudioStreamPlayer2D
 
-var lantern
-var light_reactive := LightReactive.new()
-var was_visible := false
-
+# ============================================================
+# READY
+# ============================================================
 func _ready():
     lantern = get_node_or_null(lantern_path)
     sprite.modulate.a = 0.0
 
     if lantern:
-        lantern.light_updated.connect(_on_lantern_light)
+        lantern.light_updated.connect(_on_lantern_light_updated)
 
-func _on_lantern_light(pos, radius, energy):
+    if collectible:
+        body_entered.connect(_on_body_entered)
+
+# ============================================================
+# LANTERN CALLBACK
+# ============================================================
+func _on_lantern_light_updated(pos: Vector2, radius: float, energy: float):
     light_reactive.process_light(
         get_process_delta_time(),
         pos,
@@ -36,11 +70,24 @@ func _on_lantern_light(pos, radius, energy):
         sprite
     )
 
-    if light_reactive.is_illuminated and not was_visible:
-        was_visible = true
-        _on_revealed()
+    if light_reactive.is_illuminated and not was_revealed:
+        was_revealed = true
+        emit_signal("revealed")
 
-func _on_revealed():
-    if reveal_sound:
-        audio.stream = reveal_sound
-        audio.play()
+# ============================================================
+# COLETA → DIÁRIO
+# ============================================================
+func _on_body_entered(body):
+    if not body.is_in_group("player"):
+        return
+
+    emit_signal("collected")
+
+    if diary_page and diary_manager_path != NodePath():
+        var diary = get_node_or_null(diary_manager_path)
+        if diary:
+            diary.add_page(diary_page)
+
+    if destroy_on_collect:
+        queue_free()
+
