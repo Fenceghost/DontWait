@@ -1,0 +1,111 @@
+DiaryUI (Control)   ← script DiaryUI.gd
+│
+├── Background (Panel)
+│
+├── PageList (ScrollContainer)
+│   └── VBoxContainer
+│       └── PageButton (Button) × N
+│
+├── PageViewer (Panel)
+│   ├── TitleLabel (Label)
+│   ├── BodyText (RichTextLabel)
+│   └── EmotionLabel (Label)   # opcional
+│
+└── CloseButton (Button)
+
+extends Control
+class_name DiaryUI
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("References")
+@export var page_button_scene: PackedScene
+
+@export_category("Behavior")
+@export var pause_game := true
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var page_list: VBoxContainer = $PageList/VBoxContainer
+@onready var title_label: Label = $PageViewer/TitleLabel
+@onready var body_text: RichTextLabel = $PageViewer/BodyText
+@onready var emotion_label: Label = $PageViewer/EmotionLabel
+@onready var close_button: Button = $CloseButton
+
+# ============================================================
+# ESTADO
+# ============================================================
+var is_open := false
+
+# ============================================================
+# READY
+# ============================================================
+func _ready():
+    visible = false
+    close_button.pressed.connect(close)
+
+    # Conecta direto ao DiaryManager singleton
+    if Engine.has_singleton("DiaryManager"):
+        var diary_manager = Engine.get_singleton("DiaryManager")
+        diary_manager.page_added.connect(_on_page_added)
+        diary_manager.page_updated.connect(_on_page_updated)
+        diary_manager.diary_cleared.connect(_on_diary_cleared)
+
+    _rebuild_page_list()
+
+# ============================================================
+# OPEN / CLOSE
+# ============================================================
+func open():
+    visible = true
+    is_open = true
+
+    if pause_game:
+        get_tree().paused = true
+
+func close():
+    visible = false
+    is_open = false
+
+    if pause_game:
+        get_tree().paused = false
+
+# ============================================================
+# PAGE LIST
+# ============================================================
+func _rebuild_page_list():
+    page_list.queue_free_children()
+
+    var diary_manager = Engine.get_singleton("DiaryManager")
+    if not diary_manager:
+        return
+
+    for page in diary_manager.get_pages():
+        _add_page_button(page)
+
+func _add_page_button(page):
+    var button = page_button_scene.instantiate()
+    button.text = page.title
+    button.pressed.connect(func(): _show_page(page))
+    page_list.add_child(button)
+
+func _on_page_added(page_id):
+    _rebuild_page_list()
+
+func _on_page_updated(page_id):
+    _rebuild_page_list()
+
+func _on_diary_cleared():
+    _rebuild_page_list()
+
+# ============================================================
+# PAGE VIEWER
+# ============================================================
+func _show_page(page):
+    title_label.text = page.title
+    body_text.clear()
+    body_text.append_bbcode(page.text)
+    emotion_label.text = page.emotion
+
