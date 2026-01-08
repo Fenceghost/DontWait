@@ -1,0 +1,109 @@
+ClueItem (Node2D)
+│
+├── Sprite2D
+├── AudioStreamPlayer2D
+└── (opcional) CollisionShape2D
+
+extends Area2D
+class_name InteractTrigger
+
+# ============================================================
+# SIGNALS
+# ============================================================
+signal revealed          # quando iluminado pela lanterna
+signal used              # quando o jogador interage
+signal collected         # quando algo é coletado
+
+# ============================================================
+# CONFIGURAÇÕES GERAIS
+# ============================================================
+@export_category("Trigger Behavior")
+@export var collectible: bool = false
+@export var destroy_on_collect: bool = true
+
+@export_category("Dialogue")
+@export var dialogue_id: String = ""
+
+@export_category("Light Reaction")
+@export var min_visible_energy: float = 0.4
+@export var fade_speed: float = 4.0
+
+@export_category("Lantern Reference")
+@export var lantern_path: NodePath
+
+# ============================================================
+# ESTADO INTERNO
+# ============================================================
+var lantern: Node = null
+var was_revealed: bool = false
+var can_use: bool = false
+
+var light_reactive := LightReactive.new()
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var sprite: Sprite2D = $Sprite2D
+@onready var audio: AudioStreamPlayer2D = $AudioStreamPlayer2D
+
+# ============================================================
+# READY
+# ============================================================
+func _ready() -> void:
+	sprite.modulate.a = 0.0
+
+	lantern = get_node_or_null(lantern_path)
+	if lantern and lantern.has_signal("light_updated"):
+		lantern.light_updated.connect(_on_lantern_light_updated)
+
+	body_entered.connect(_on_body_entered)
+
+# ============================================================
+# LANTERNA → REAÇÃO À LUZ
+# ============================================================
+func _on_lantern_light_updated(
+	pos: Vector2,
+	radius: float,
+	energy: float
+) -> void:
+	light_reactive.process_light(
+		get_process_delta_time(),
+		pos,
+		radius,
+		energy,
+		global_position,
+		sprite
+	)
+
+	can_use = light_reactive.is_illuminated and energy >= min_visible_energy
+
+	if can_use and not was_revealed:
+		was_revealed = true
+		revealed.emit()
+		_trigger_dialogue()
+
+# ============================================================
+# INTERAÇÃO DO JOGADOR
+# ============================================================
+func _on_body_entered(body: Node) -> void:
+	if not body.is_in_group("player"):
+		return
+
+	used.emit()
+	_trigger_dialogue()
+
+	if collectible:
+		collected.emit()
+
+		if destroy_on_collect:
+			queue_free()
+
+# ============================================================
+# DIÁLOGO
+# ============================================================
+func _trigger_dialogue() -> void:
+	if dialogue_id != "":
+		DialogueManager.show_dialogue(dialogue_id)
+
+
+
