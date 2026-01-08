@@ -5,6 +5,14 @@
 #Scale: 0.5 ~ 1.0, gradualmente diminuindo
 #Color: cinza, com alpha variando de 0.6 → 0
 
+Lantern (Node2D) [script: Lantern.gd]
+│
+├── Light (PointLight2D)
+├── AudioIdle (AudioStreamPlayer2D)
+├── AudioStress (AudioStreamPlayer2D)
+├── AudioSpasm (AudioStreamPlayer2D)
+└── SmokeParticles (GPUParticles2D)
+
 extends Node2D
 
 # ============================================================
