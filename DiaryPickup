@@ -1,0 +1,45 @@
+extends Node
+class_name DiaryPickup
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Diary")
+@export var diary_page: DiaryPageData
+
+@export_category("Sanity Effect")
+@export var sanity_change: float = 0.0
+
+@export_category("References")
+@export var trigger_path: NodePath
+
+# ============================================================
+# ESTADO
+# ============================================================
+var trigger: InteractTrigger
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var audio: AudioStreamPlayer2D = $AudioStreamPlayer2D
+
+# ============================================================
+# READY
+# ============================================================
+func _ready() -> void:
+	trigger = get_node_or_null(trigger_path)
+	if trigger:
+		trigger.collected.connect(_on_collected)
+
+# ============================================================
+# COLETA
+# ============================================================
+func _on_collected() -> void:
+	if diary_page:
+		DiaryManager.add_page(diary_page)
+
+	if sanity_change != 0.0:
+		SurvivalStats.modify_sanity(sanity_change)
+
+	if audio:
+		audio.play()
