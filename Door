@@ -1,0 +1,59 @@
+Door (Node2D)
+├── AnimationPlayer
+├── AudioStreamPlayer2D
+
+extends Node2D
+class_name DoorController
+
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+@export_category("Door")
+@export var target_scene: String = ""
+
+@export_category("Animation")
+@export var open_animation: String = "open"
+
+@export_category("References")
+@export var trigger_path: NodePath
+
+# ============================================================
+# ESTADO
+# ============================================================
+var trigger: InteractTrigger
+var opened := false
+
+# ============================================================
+# NODES
+# ============================================================
+@onready var animation_player: AnimationPlayer = $AnimationPlayer
+@onready var audio: AudioStreamPlayer2D = $AudioStreamPlayer2D
+
+# ============================================================
+# READY
+# ============================================================
+func _ready() -> void:
+	trigger = get_node_or_null(trigger_path)
+	if trigger:
+		trigger.used.connect(_on_used)
+
+# ============================================================
+# INTERAÇÃO
+# ============================================================
+func _on_used() -> void:
+	if opened:
+		return
+
+	opened = true
+
+	if audio:
+		audio.play()
+
+	if animation_player and animation_player.has_animation(open_animation):
+		animation_player.play(open_animation)
+
+		# espera animação terminar antes da troca
+		await animation_player.animation_finished
+
+	if target_scene != "":
+		get_tree().change_scene_to_file(target_scene)
