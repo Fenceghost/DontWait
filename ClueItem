@@ -1,0 +1,46 @@
+ClueItem (Node2D)
+│
+├── Sprite2D
+├── AudioStreamPlayer2D
+└── (opcional) CollisionShape2D
+
+extends Node2D
+
+@export_category("Clue")
+@export var reveal_sound: AudioStream
+@export var reveal_delay := 0.2
+
+@export var lantern_path: NodePath
+
+@onready var sprite: Sprite2D = $Sprite2D
+@onready var audio: AudioStreamPlayer2D = $AudioStreamPlayer2D
+
+var lantern
+var light_reactive := LightReactive.new()
+var was_visible := false
+
+func _ready():
+    lantern = get_node_or_null(lantern_path)
+    sprite.modulate.a = 0.0
+
+    if lantern:
+        lantern.light_updated.connect(_on_lantern_light)
+
+func _on_lantern_light(pos, radius, energy):
+    light_reactive.process_light(
+        get_process_delta_time(),
+        pos,
+        radius,
+        energy,
+        global_position,
+        sprite
+    )
+
+    if light_reactive.is_illuminated and not was_visible:
+        was_visible = true
+        _on_revealed()
+
+func _on_revealed():
+    if reveal_sound:
+        audio.stream = reveal_sound
+        audio.play()
