@@ -12,6 +12,7 @@ class_name ClueItem
 # ============================================================
 signal revealed
 signal collected
+signal used  # novo sinal para portas ou interações
 
 # ============================================================
 # CONFIGURAÇÕES
@@ -30,6 +31,10 @@ signal collected
 @export_category("Dialogue")
 @export var dialogue_id: String = ""
 
+@export_category("Door / Scene")
+@export var target_scene: String = ""  # se preenchido, ClueItem funciona como porta
+@export var requires_light: bool = false  # porta só funciona se iluminada
+
 @export_category("References")
 @export var lantern_path: NodePath
 
@@ -39,6 +44,7 @@ signal collected
 var lantern
 var was_revealed := false
 var light_reactive := LightReactive.new()
+var can_use := false  # usado para portas
 
 # ============================================================
 # NODES
@@ -56,7 +62,8 @@ func _ready():
     if lantern:
         lantern.light_updated.connect(_on_lantern_light_updated)
 
-    if collectible:
+    # conecta coleta apenas se for coletável ou porta
+    if collectible or target_scene != "":
         body_entered.connect(_on_body_entered)
 
 # ============================================================
@@ -72,26 +79,37 @@ func _on_lantern_light_updated(pos: Vector2, radius: float, energy: float):
         sprite
     )
 
-    if light_reactive.is_illuminated and not was_revealed:
+    can_use = light_reactive.is_illuminated
+
+    if can_use and not was_revealed:
         was_revealed = true
         emit_signal("revealed")
         _trigger_dialogue()
 
 # ============================================================
-# COLETA → DIÁRIO E DIÁLOGO
+# INTERAÇÃO / COLETA / PORTA
 # ============================================================
 func _on_body_entered(body):
     if not body.is_in_group("player"):
         return
 
+    # porta: só funciona se iluminada (se require_light)
+    if target_scene != "" and requires_light and not can_use:
+        return
+
     emit_signal("collected")
+    emit_signal("used")
     _trigger_dialogue()
 
-    # Envia página para DiaryManager global
+    # envia página para DiaryManager global (se houver)
     if diary_page:
         DiaryManager.add_page(diary_page)
 
-    if destroy_on_collect:
+    # muda de cena se target_scene preenchido
+    if target_scene != "":
+        get_tree().change_scene(target_scene)
+
+    if collectible and destroy_on_collect:
         queue_free()
 
 # ============================================================
@@ -100,5 +118,4 @@ func _on_body_entered(body):
 func _trigger_dialogue():
     if dialogue_id != "":
         DialogueManager.show_dialogue(dialogue_id)
-
 
