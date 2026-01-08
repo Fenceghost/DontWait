@@ -97,9 +97,55 @@ Este script controla o lampião da personagem principal (Ayla) em **Don’t Wait
 
 ---
 
+
 ## **Dicas Profissionais**
 - Use `signals` para comunicar mudanças de estado para HUD ou Player.
 - Ajuste `agitation` externamente via `set_threat_level()` para sincronizar efeitos de luz e som.
 - Mantenha partículas leves (`smoke_max_amount` baixo) para performance em PC e mobile.
 - Ajuste LightOccluder2D dinamicamente para efeitos de sombras realistas.
+
+
+# Player – Don’t Wait
+
+Este script controla o jogador no estilo **4-direções**, com:
+
+- Movimento com caminhada e corrida.
+- Sistema de stamina, impedindo corrida com energia baixa.
+- Passos dinâmicos com variação de pitch e volume baseada na lanterna e stamina.
+- Diferenciação de sons de passos por tipo de superfície: madeira, pedra e lama.
+- Integração com o lampião (Lantern) para irregularidade e tremor de passos.
+- Troca de animações baseada em movimento, stamina e agitação do lampião.
+
+---
+
+## **Exported Properties**
+
+**Movement**
+- `speed_walk` – Velocidade de caminhada.
+- `speed_run` – Velocidade de corrida.
+
+**Stamina**
+- `max_stamina` – Energia máxima.
+- `stamina_drain_rate` – Consumo de stamina por segundo ao correr.
+- `stamina_recover_rate` – Recuperação de stamina por segundo ao andar.
+- `stamina_min_run` – Mínimo de stamina para poder correr.
+
+**Steps**
+- `step_interval_walk` – Intervalo base de passos caminhando.
+- `step_interval_run` – Intervalo base de passos correndo.
+
+**TileMap**
+- `ground_tilemap_path` – Caminho para o TileMap do chão.
+- `step_sounds_wood`, `step_sounds_stone`, `step_sounds_mud` – Arrays de sons de passos por superfície.
+
+---
+
+
+## **Dicas de Implementação**
+
+- Configure as tiles do TileMap com a propriedade `surface_type` para reproduzir o som correto.
+- Ajuste `step_interval_walk` e `step_interval_run` conforme ritmo do jogo.
+- `Lantern.agitation` afeta ritmo e pitch dos passos para sensações de tensão.
+- Use `stamina` para definir animações de cansaço.
+- `signals` do lampião podem ser usados para HUD ou efeitos visuais.
 
